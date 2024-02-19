@@ -1,3 +1,4 @@
+import time
 import whisper
 import torch
 import wave
@@ -40,8 +41,9 @@ class AudioTranscriber:
             }
         }
 
-    def transcribe_audio_queue(self, audio_queue):
+    def transcribe_audio_queue(self, audio_queue, control_event):
         while True:
+            control_event.wait()
             who_spoke, data, time_spoken = audio_queue.get()
             self.update_last_sample_and_phrase_status(who_spoke, data, time_spoken)
             source_info = self.audio_sources[who_spoke]

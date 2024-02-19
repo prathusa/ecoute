@@ -10,6 +10,9 @@ import sys
 import TranscriberModels
 import subprocess
 
+FONT_SIZE = 20
+
+
 def write_in_textbox(textbox, text):
     textbox.delete("0.0", "end")
     textbox.insert("0.0", text)
@@ -38,23 +41,38 @@ def clear_context(transcriber, audio_queue):
     with audio_queue.mutex:
         audio_queue.queue.clear()
 
-def create_ui_components(root):
+def create_user_input_components(root):
+    prompt_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#FFFCF2', wrap="word")
+    prompt_textbox.grid(row=4, column=0, padx=10, pady=10, sticky="nsew")
+
+    send_prompt_button = ctk.CTkButton(root, text="Send Prompt", command=None)
+    send_prompt_button.grid(row=5, column=0, padx=10, pady=3, sticky="nsew")
+
+    return prompt_textbox, send_prompt_button
+
+def create_ui_components(root, control_event):
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     root.title("Ecoute")
     root.configure(bg='#252422')
     root.geometry("1000x600")
 
-    font_size = 20
 
-    transcript_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#FFFCF2', wrap="word")
+    transcript_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#FFFCF2', wrap="word")
     transcript_textbox.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
 
-    response_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#639cdc', wrap="word")
+    response_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#639cdc', wrap="word")
     response_textbox.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
 
     freeze_button = ctk.CTkButton(root, text="Freeze", command=None)
     freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
+    
+    start_button = ctk.CTkButton(root, text="Start", command=lambda: control_event.set())
+    start_button.grid(row=6, column=0, padx=10, pady=3, sticky="nsew")
+
+    stop_button = ctk.CTkButton(root, text="Stop", command=lambda: control_event.clear())
+    stop_button.grid(row=6, column=1, padx=10, pady=3, sticky="nsew")
+
 
     update_interval_slider_label = ctk.CTkLabel(root, text=f"", font=("Arial", 12), text_color="#FFFCF2")
     update_interval_slider_label.grid(row=2, column=1, padx=10, pady=3, sticky="nsew")
@@ -72,8 +90,11 @@ def main():
         print("ERROR: The ffmpeg library is not installed. Please install ffmpeg and try again.")
         return
 
+    control_event = threading.Event()
+    control_event.set()  # Initially allow threads to run
+
     root = ctk.CTk()
-    transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button = create_ui_components(root)
+    transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button = create_ui_components(root, control_event)
 
     audio_queue = queue.Queue()
 
@@ -88,12 +109,12 @@ def main():
     model = TranscriberModels.get_model('--api' in sys.argv)
 
     transcriber = AudioTranscriber(user_audio_recorder.source, speaker_audio_recorder.source, model)
-    transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(audio_queue,))
+    transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(audio_queue, control_event))
     transcribe.daemon = True
     transcribe.start()
 
     responder = GPTResponder()
-    respond = threading.Thread(target=responder.respond_to_transcriber, args=(transcriber,))
+    respond = threading.Thread(target=responder.respond_to_transcriber, args=(transcriber, control_event))
     respond.daemon = True
     respond.start()
 
@@ -103,10 +124,22 @@ def main():
     root.grid_rowconfigure(1, weight=1)
     root.grid_rowconfigure(2, weight=1)
     root.grid_rowconfigure(3, weight=1)
+    root.grid_rowconfigure(4, weight=1)
+    root.grid_rowconfigure(5, weight=1)
     root.grid_columnconfigure(0, weight=2)
     root.grid_columnconfigure(1, weight=1)
 
-     # Add the clear transcript button to the UI
+    # Add user input components to the UI
+    prompt_textbox, send_prompt_button = create_user_input_components(root)
+    
+    def send_prompt_to_responder():
+        user_prompt = prompt_textbox.get("1.0", "end-1c")  # Retrieve text from prompt_textbox
+        responder.update_user_prompt(user_prompt)  # Update the instance variable in GPTResponder
+
+    # Attach the event handler to the 'Send Prompt' button
+    send_prompt_button.configure(command=send_prompt_to_responder)
+
+    # Add the clear transcript button to the UI
     clear_transcript_button = ctk.CTkButton(root, text="Clear Transcript", command=lambda: clear_context(transcriber, audio_queue, ))
     clear_transcript_button.grid(row=1, column=0, padx=10, pady=3, sticky="nsew")
 
