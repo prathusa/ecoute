@@ -1,6 +1,5 @@
-import time
-import whisper
-import torch
+# AudioTranscriber.py
+
 import wave
 import os
 import threading

@@ -1,3 +1,4 @@
+# main.py
 import threading
 from AudioTranscriber import AudioTranscriber
 from GPTResponder import GPTResponder
@@ -9,6 +10,7 @@ import torch
 import sys
 import TranscriberModels
 import subprocess
+import asyncio
 
 FONT_SIZE = 20
 
@@ -50,7 +52,7 @@ def create_user_input_components(root):
 
     return prompt_textbox, send_prompt_button
 
-def create_ui_components(root, control_event):
+def create_ui_components(root, control_event, user_audio_recorder, speaker_audio_recorder):
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
     root.title("Ecoute")
@@ -67,12 +69,11 @@ def create_ui_components(root, control_event):
     freeze_button = ctk.CTkButton(root, text="Freeze", command=None)
     freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
     
-    start_button = ctk.CTkButton(root, text="Start", command=lambda: control_event.set())
+    start_button = ctk.CTkButton(root, text="Start", command=lambda: [control_event.set(), user_audio_recorder.start_recording(), speaker_audio_recorder.start_recording()])
     start_button.grid(row=6, column=0, padx=10, pady=3, sticky="nsew")
 
-    stop_button = ctk.CTkButton(root, text="Stop", command=lambda: control_event.clear())
+    stop_button = ctk.CTkButton(root, text="Stop", command=lambda: [control_event.clear(), user_audio_recorder.stop_recording(), speaker_audio_recorder.stop_recording()])
     stop_button.grid(row=6, column=1, padx=10, pady=3, sticky="nsew")
-
 
     update_interval_slider_label = ctk.CTkLabel(root, text=f"", font=("Arial", 12), text_color="#FFFCF2")
     update_interval_slider_label.grid(row=2, column=1, padx=10, pady=3, sticky="nsew")
@@ -94,7 +95,6 @@ def main():
     control_event.set()  # Initially allow threads to run
 
     root = ctk.CTk()
-    transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button = create_ui_components(root, control_event)
 
     audio_queue = queue.Queue()
 
@@ -106,6 +106,8 @@ def main():
     speaker_audio_recorder = AudioRecorder.DefaultSpeakerRecorder()
     speaker_audio_recorder.record_into_queue(audio_queue)
 
+    transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button = create_ui_components(root, control_event, user_audio_recorder, speaker_audio_recorder)
+
     model = TranscriberModels.get_model('--api' in sys.argv)
 
     transcriber = AudioTranscriber(user_audio_recorder.source, speaker_audio_recorder.source, model)
@@ -113,8 +115,14 @@ def main():
     transcribe.daemon = True
     transcribe.start()
 
+    def thread_target(transcriber, control_event):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(responder.respond_to_transcriber(transcriber, control_event))
+        loop.close()
+
     responder = GPTResponder()
-    respond = threading.Thread(target=responder.respond_to_transcriber, args=(transcriber, control_event))
+    respond = threading.Thread(target=thread_target, args=(transcriber, control_event))
     respond.daemon = True
     respond.start()
 

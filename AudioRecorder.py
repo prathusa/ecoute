@@ -1,3 +1,5 @@
+# AudioRecorder.py
+
 import custom_speech_recognition as sr
 import pyaudiowpatch as pyaudio
 from datetime import datetime
@@ -17,6 +19,13 @@ class BaseRecorder:
 
         self.source = source
         self.source_name = source_name
+        self.recording = False
+
+    def start_recording(self):
+        self.recording = True
+
+    def stop_recording(self):
+        self.recording = False
 
     def adjust_for_noise(self, device_name, msg):
         print(f"[INFO] Adjusting for ambient noise from {device_name}. " + msg)
@@ -25,9 +34,10 @@ class BaseRecorder:
         print(f"[INFO] Completed ambient noise adjustment for {device_name}.")
 
     def record_into_queue(self, audio_queue):
-        def record_callback(_, audio:sr.AudioData) -> None:
-            data = audio.get_raw_data()
-            audio_queue.put((self.source_name, data, datetime.utcnow()))
+        def record_callback(_, audio: sr.AudioData) -> None:
+            if self.recording:  # Check the flag before putting audio into the queue
+                data = audio.get_raw_data()
+                audio_queue.put((self.source_name, data, datetime.utcnow()))
 
         self.recorder.listen_in_background(self.source, record_callback, phrase_time_limit=RECORD_TIMEOUT)
 
