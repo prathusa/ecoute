@@ -35,6 +35,7 @@ Some example phrasing structures to use in your response:
 - How would you implement a stack?
 - How would you implement a queue?
 - How would you implement a linked list?
+If nothing of interest is in the conversation, reply with "pass".
 """
 
 PROBLEM_SOLVING_PROMPT = f"""You are interviewing for software engineer intern position at a big tech FAANG company.

@@ -24,7 +24,8 @@ class GPTResponder:
     async def setup_insight_assistant(self):
         params = AssistantParams(
             name="Insight Assistant",
-            model="gpt-3.5-turbo",
+            # model="gpt-3.5-turbo",
+            model="gpt-4-turbo-preview",
             instructions=QUESTION_FINDER,
             tools=[] 
         )
@@ -37,8 +38,8 @@ class GPTResponder:
     async def setup_solution_assistant(self):
         params = AssistantParams(
             name="Interview Solution Assistant",
-            model="gpt-3.5-turbo",
-            # model="gpt-4-turbo-preview",
+            # model="gpt-3.5-turbo",
+            model="gpt-4-turbo-preview",
             instructions=PROBLEM_SOLVING_PROMPT,
             tools=[Tool(type=ToolType.code_interpreter)],
         )
@@ -60,21 +61,8 @@ class GPTResponder:
             print(f"Error generating response: {e}")
             return ""
     
-    # async def solution_from_insight(self, insight):
-    #     if not self.solution_thread:
-    #         await self.setup_solution_assistant()
-    #     try:
-    #         await self.solution_thread.create_user_message(insight)
-    #         await self.solution_thread.run_thread(PROBLEM_SOLVING_PROMPT)
-    #         messages = await self.solution_thread.get_messages()
-    #         return messages[-1]  # Assuming the last message is the response
-    #     except Exception as e:
-    #         print(f"Error generating response: {e}")
-    #         return ""
-        
     def update_response(self, new_text):
         self.response += new_text
-        # Optionally, you can print the updated response here or elsewhere
         print("Updated Response:", self.response)
 
     async def solution_from_insight_streaming(self, insight):
@@ -100,7 +88,7 @@ class GPTResponder:
                 transcript_string = transcriber.get_transcript()
                 print("Transcript", transcript_string)
                 insight = await self.insight_from_transcript(transcript_string)
-                if insight != self.insight:
+                if insight != self.insight and insight != "pass":
                     self.insight = insight
                     print("Insight", insight)
                     # self.response = await self.solution_from_insight(insight)
