@@ -2,8 +2,8 @@
 import threading
 from AudioTranscriber import AudioTranscriber
 from GPTResponder import GPTResponder
-import customtkinter as ctk
-import AudioRecorder 
+import streamlit as st
+import AudioRecorder
 import queue
 import time
 import torch
@@ -14,106 +14,77 @@ import asyncio
 
 FONT_SIZE = 20
 
-
-def write_in_textbox(textbox, text):
-    textbox.delete("0.0", "end")
-    textbox.insert("0.0", text)
-
 def update_transcript_UI(transcriber, textbox):
     transcript_string = transcriber.get_transcript()
-    write_in_textbox(textbox, transcript_string)
-    textbox.after(300, update_transcript_UI, transcriber, textbox)
+    textbox.text_area("Transcript", value=transcript_string, height=200)
 
-def update_response_UI(responder, textbox, update_interval_slider_label, update_interval_slider, freeze_state):
+def update_response_UI(responder, textbox, update_interval_slider, freeze_state):
     if not freeze_state[0]:
         response = responder.response
-
-        textbox.configure(state="normal")
-        write_in_textbox(textbox, response)
-        textbox.configure(state="disabled")
-
-        update_interval = int(update_interval_slider.get())
+        textbox.text_area("Response", value=response, height=200)
+        update_interval = update_interval_slider.slider("Update Interval (seconds)", min_value=1, max_value=10, value=2, step=1)
         responder.update_response_interval(update_interval)
-        update_interval_slider_label.configure(text=f"Update interval: {update_interval} seconds")
-
-    textbox.after(300, update_response_UI, responder, textbox, update_interval_slider_label, update_interval_slider, freeze_state)
 
 def clear_context(transcriber, audio_queue):
     transcriber.clear_transcript_data()
     with audio_queue.mutex:
         audio_queue.queue.clear()
 
-def create_user_input_components(root):
-    prompt_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#FFFCF2', wrap="word")
-    prompt_textbox.grid(row=4, column=0, padx=10, pady=10, sticky="nsew")
-
-    send_prompt_button = ctk.CTkButton(root, text="Send Prompt", command=None)
-    send_prompt_button.grid(row=5, column=0, padx=10, pady=3, sticky="nsew")
-
-    return prompt_textbox, send_prompt_button
-
-def create_ui_components(root, control_event, user_audio_recorder, speaker_audio_recorder):
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("dark-blue")
-    root.title("Ecoute")
-    root.configure(bg='#252422')
-    root.geometry("1000x600")
-
-
-    transcript_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#FFFCF2', wrap="word")
-    transcript_textbox.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
-
-    response_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", FONT_SIZE), text_color='#639cdc', wrap="word")
-    response_textbox.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
-
-    freeze_button = ctk.CTkButton(root, text="Freeze", command=None)
-    freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
-    
-    start_button = ctk.CTkButton(root, text="Start", command=lambda: [control_event.set(), user_audio_recorder.start_recording(), speaker_audio_recorder.start_recording()])
-    start_button.grid(row=6, column=0, padx=10, pady=3, sticky="nsew")
-
-    stop_button = ctk.CTkButton(root, text="Stop", command=lambda: [control_event.clear(), user_audio_recorder.stop_recording(), speaker_audio_recorder.stop_recording()])
-    stop_button.grid(row=6, column=1, padx=10, pady=3, sticky="nsew")
-
-    update_interval_slider_label = ctk.CTkLabel(root, text=f"", font=("Arial", 12), text_color="#FFFCF2")
-    update_interval_slider_label.grid(row=2, column=1, padx=10, pady=3, sticky="nsew")
-
-    update_interval_slider = ctk.CTkSlider(root, from_=1, to=10, width=300, height=20, number_of_steps=9)
-    update_interval_slider.set(2)
-    update_interval_slider.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
-
-    return transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button
-
-def main():
-    try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except FileNotFoundError:
-        print("ERROR: The ffmpeg library is not installed. Please install ffmpeg and try again.")
-        return
-
-    control_event = threading.Event()
-    control_event.set()  # Initially allow threads to run
-
-    root = ctk.CTk()
-
+def setup_audio_recorders():
     audio_queue = queue.Queue()
-
     user_audio_recorder = AudioRecorder.DefaultMicRecorder()
     user_audio_recorder.record_into_queue(audio_queue)
-
-    time.sleep(2)
-
+    time.sleep(2)  # Consider optimizing or removing this delay if not necessary
     speaker_audio_recorder = AudioRecorder.DefaultSpeakerRecorder()
     speaker_audio_recorder.record_into_queue(audio_queue)
+    return audio_queue, user_audio_recorder, speaker_audio_recorder
 
-    transcript_textbox, response_textbox, update_interval_slider, update_interval_slider_label, freeze_button = create_ui_components(root, control_event, user_audio_recorder, speaker_audio_recorder)
+def main():
+    if 'init_done' not in st.session_state:
+        try:
+            subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            st.error("ERROR: The ffmpeg library is not installed. Please install ffmpeg and try again.")
+            return
+
+        control_event = threading.Event()
+        control_event.set()  # Initially allow threads to run
+
+        audio_queue, user_audio_recorder, speaker_audio_recorder = setup_audio_recorders()
+
+        st.session_state['audio_queue'] = audio_queue
+        st.session_state['user_audio_recorder'] = user_audio_recorder
+        st.session_state['speaker_audio_recorder'] = speaker_audio_recorder
+        st.session_state['init_done'] = True
+        st.session_state['control_event'] = control_event
+    else:
+        audio_queue = st.session_state['audio_queue']
+        user_audio_recorder = st.session_state['user_audio_recorder']
+        speaker_audio_recorder = st.session_state['speaker_audio_recorder']
+        control_event = st.session_state['control_event']
+
+    st.set_page_config(page_title="Ecoute", layout="wide")
+    st.title("Ecoute")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        transcript_textbox = st.empty()
+
+    with col2:
+        response_textbox = st.empty()
+        freeze_state = [False]  # Using list to be able to change its content inside inner functions
+        freeze_button = st.button("Freeze")
+        update_interval_slider = st.empty()
 
     model = TranscriberModels.get_model('--api' in sys.argv)
-
     transcriber = AudioTranscriber(user_audio_recorder.source, speaker_audio_recorder.source, model)
-    transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(audio_queue, control_event))
-    transcribe.daemon = True
-    transcribe.start()
+
+    if 'transcribe' not in st.session_state:
+        transcribe = threading.Thread(target=transcriber.transcribe_audio_queue, args=(audio_queue, control_event))
+        transcribe.daemon = True
+        transcribe.start()
+        st.session_state['transcribe'] = transcribe
 
     def thread_target(transcriber, control_event):
         loop = asyncio.new_event_loop()
@@ -122,48 +93,49 @@ def main():
         loop.close()
 
     responder = GPTResponder()
-    respond = threading.Thread(target=thread_target, args=(transcriber, control_event))
-    respond.daemon = True
-    respond.start()
 
-    print("READY")
+    if 'respond' not in st.session_state:
+        respond = threading.Thread(target=thread_target, args=(transcriber, control_event))
+        respond.daemon = True
+        respond.start()
+        st.session_state['respond'] = respond
 
-    root.grid_rowconfigure(0, weight=100)
-    root.grid_rowconfigure(1, weight=1)
-    root.grid_rowconfigure(2, weight=1)
-    root.grid_rowconfigure(3, weight=1)
-    root.grid_rowconfigure(4, weight=1)
-    root.grid_rowconfigure(5, weight=1)
-    root.grid_columnconfigure(0, weight=2)
-    root.grid_columnconfigure(1, weight=1)
+    st.write("READY")
 
-    # Add user input components to the UI
-    prompt_textbox, send_prompt_button = create_user_input_components(root)
-    
+    prompt_textbox = st.text_area("User Prompt", height=100)
+    send_prompt_button = st.button("Send Prompt")
+
     def send_prompt_to_responder():
-        user_prompt = prompt_textbox.get("1.0", "end-1c")  # Retrieve text from prompt_textbox
+        user_prompt = prompt_textbox  # Retrieve text from prompt_textbox
         responder.update_user_prompt(user_prompt)  # Update the instance variable in GPTResponder
 
-    # Attach the event handler to the 'Send Prompt' button
-    send_prompt_button.configure(command=send_prompt_to_responder)
+    if send_prompt_button:
+        send_prompt_to_responder()
 
-    # Add the clear transcript button to the UI
-    clear_transcript_button = ctk.CTkButton(root, text="Clear Transcript", command=lambda: clear_context(transcriber, audio_queue, ))
-    clear_transcript_button.grid(row=1, column=0, padx=10, pady=3, sticky="nsew")
+    clear_transcript_button = st.button("Clear Transcript")
+    if clear_transcript_button:
+        clear_context(transcriber, audio_queue)
 
-    freeze_state = [False]  # Using list to be able to change its content inside inner functions
     def freeze_unfreeze():
         freeze_state[0] = not freeze_state[0]  # Invert the freeze state
-        freeze_button.configure(text="Unfreeze" if freeze_state[0] else "Freeze")
 
-    freeze_button.configure(command=freeze_unfreeze)
+    if freeze_button:
+        freeze_unfreeze()
 
-    update_interval_slider_label.configure(text=f"Update interval: {update_interval_slider.get()} seconds")
+    start_button = st.button("Start")
+    if start_button:
+        control_event.set()
+        user_audio_recorder.start_recording()
+        speaker_audio_recorder.start_recording()
+
+    stop_button = st.button("Stop")
+    if stop_button:
+        control_event.clear()
+        user_audio_recorder.stop_recording()
+        speaker_audio_recorder.stop_recording()
 
     update_transcript_UI(transcriber, transcript_textbox)
-    update_response_UI(responder, response_textbox, update_interval_slider_label, update_interval_slider, freeze_state)
- 
-    root.mainloop()
+    update_response_UI(responder, response_textbox, update_interval_slider, freeze_state)
 
 if __name__ == "__main__":
     main()
